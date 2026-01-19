@@ -39,6 +39,7 @@ jobs:
         with:
           working-dir: .
           config-file: terraform-docs.yml
+          output-format: "markdown document"
           git-push: "true"
 
   validate-release-title:
