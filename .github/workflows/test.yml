@@ -1,0 +1,158 @@
+name: 'Test: Run Terraform Validation'
+
+on:
+  pull_request:
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  terraform-format:
+    name: Terraform Format
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: latest
+
+      - name: Format Terraform files
+        run: terraform fmt -recursive .
+
+      - name: Commit formatted files
+        if: github.event_name == 'pull_request'
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -z "${{ github.head_ref }}" ]; then
+            echo "::warning::Not on a pull request branch; skipping push"
+            exit 0
+          fi
+
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "style: format terraform files"
+            
+            # Fetch latest from remote and rebase
+            git fetch origin ${{ github.head_ref }}
+            git rebase origin/${{ github.head_ref }}
+            
+            git push origin HEAD:${{ github.head_ref }}
+            echo "::notice::Terraform files formatted and committed"
+          else
+            echo "::notice::Terraform files are already properly formatted"
+          fi
+
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: latest
+
+      - name: Initialize Terraform
+        run: |
+          terraform init -backend=false
+          echo "::notice::Terraform initialized (backend disabled)"
+
+      - name: Validate Terraform configuration
+        run: |
+          terraform validate
+          echo "::notice::Terraform configuration is valid"
+
+  documentation:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for README
+        run: |
+          if [ -f "README.md" ]; then
+            echo "::notice::README.md found"
+          else
+            echo "::error::README.md is missing"
+            exit 1
+          fi
+
+      - name: Check for main.tf
+        run: |
+          if [ -f "main.tf" ]; then
+            echo "::notice::main.tf found"
+          else
+            echo "::error::main.tf is missing"
+            exit 1
+          fi
+
+      - name: Check for variables.tf
+        run: |
+          if [ -f "variables.tf" ]; then
+            echo "::notice::variables.tf found"
+          else
+            echo "::error::variables.tf is missing"
+            exit 1
+          fi
+
+      - name: Check for outputs.tf
+        run: |
+          if [ -f "outputs.tf" ]; then
+            echo "::notice::outputs.tf found"
+          else
+            echo "::warning::outputs.tf is missing (recommended)"
+          fi
+
+  summary:
+    name: Test Summary
+    needs: [terraform-format, terraform-validate, documentation]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Check test results
+        run: |
+          fmt="${{ needs.terraform-format.result }}"
+          validate="${{ needs.terraform-validate.result }}"
+          docs="${{ needs.documentation.result }}"
+
+          failed=0
+
+          if [ "$fmt" != "success" ]; then
+            echo "::error::terraform fmt did not succeed (result: $fmt)"
+            failed=1
+          fi
+
+          if [ "$validate" != "success" ]; then
+            echo "::error::terraform validate did not succeed (result: $validate)"
+            failed=1
+          fi
+
+          if [ "$docs" != "success" ]; then
+            echo "::error::documentation check did not succeed (result: $docs)"
+            failed=1
+          fi
+
+          if [ $failed -eq 1 ]; then
+            exit 1
+          else
+            echo "::notice::All Terraform checks succeeded (fmt, validate, documentation)"
+          fi
