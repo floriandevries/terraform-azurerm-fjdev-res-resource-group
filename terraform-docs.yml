@@ -1,69 +1,65 @@
-  ---
-  ### To generate the output file to partially incorporate in the README.md,
-  ### Execute this command in the Terraform module's code folder:
-  # terraform-docs -c .terraform-docs.yml .
+### To generate the output file to partially incorporate in the README.md,
+### Execute this command in the Terraform module's code folder:
+# terraform-docs -c terraform-docs.yml .
   
-  formatter: "markdown document" # this is required
+formatter: "markdown document" # this is required
   
-  version: "0.16.0"
+version: "0.20.0"
   
-  header-from: "_header.md"
-  footer-from: "_footer.md"
+header-from: "_header.md"
   
-  recursive:
-    enabled: false
-    path: modules
+recursive:
+  enabled: false
+  path: modules
   
-  sections:
-    hide: []
-    show: []
+sections:
+  hide: []
+  show: []
   
-  content: |-
-    {{ .Header }}    
+content: |-
+  {{ .Header }}
+
+  <!-- markdownlint-disable MD033 -->
+  {{ .Requirements }}
+
+  {{ .Providers }}
+
+  {{ .Resources }}
+
+  <!-- markdownlint-disable MD013 -->
+  {{ .Inputs }}
+
+  {{ .Outputs }}
+
+  {{ .Modules }}
   
-    <!-- markdownlint-disable MD033 -->
-    {{ .Requirements }}
+output:
+  file: README.md
+  mode: replace
+  template: |-
+    <!-- BEGIN_TF_DOCS -->
+    {{ .Content }}
+    <!-- END_TF_DOCS -->
+output-values:
+  enabled: false
+  from: ""
   
-    {{ .Providers }}
+sort:
+  enabled: true
+  by: required
   
-    {{ .Resources }}
-  
-    <!-- markdownlint-disable MD013 -->
-    {{ .Inputs }}
-  
-    {{ .Outputs }}
-  
-    {{ .Modules }}
-  
-    {{ .Footer }}
-  
-  output:
-    file: README.md
-    mode: replace
-    template: |-
-      <!-- BEGIN_TF_DOCS -->
-      {{ .Content }}
-      <!-- END_TF_DOCS -->      
-  output-values:
-    enabled: false
-    from: ""
-  
-  sort:
-    enabled: true
-    by: required
-  
-  settings:
-    anchor: true
-    color: true
-    default: true
-    description: false
-    escape: true
-    hide-empty: false
-    html: true
-    indent: 2
-    lockfile: true
-    read-comments: true
-    required: true
-    sensitive: true
-    type: true
+settings:
+  anchor: true
+  color: true
+  default: true
+  description: false
+  escape: true
+  hide-empty: false
+  html: true
+  indent: 2
+  lockfile: true
+  read-comments: true
+  required: true
+  sensitive: true
+  type: true
   
