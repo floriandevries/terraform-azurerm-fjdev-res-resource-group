@@ -10,14 +10,45 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  documentation:
+    name: Create Documentation
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Configure Git
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Render terraform docs and push changes back to PR
+        uses: terraform-docs/gh-actions@v0.21.0
+        with:
+          working-dir: .
+          output-file: README.md
+          output-method: inject
+          git-push: "true"
+
   validate-release-label:
     name: Validate Release Label
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
     
     steps:
       - name: Check for release label
@@ -32,8 +63,12 @@ jobs:
 
   release:
     name: Create Release
+    needs: validate-release-label
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.new-version.outputs.new-version }}
       skipped: ${{ steps.new-version.outputs.skip }}
@@ -96,8 +131,8 @@ jobs:
       - name: Configure Git
         if: steps.new-version.outputs.skip != 'true'
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Create and push git tag
         if: steps.new-version.outputs.skip != 'true'
