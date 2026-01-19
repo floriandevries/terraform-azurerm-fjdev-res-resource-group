@@ -1,31 +1,37 @@
 name: 'Test: Run Terraform Validation'
 
+env:
+  TERRAFORM_VERSION: '1.8.5'
+
 on:
   pull_request:
-    types: [opened, reopened, labeled, unlabeled, synchronize]
+    types: [opened, reopened, synchronize, edited]
     branches:
       - main
 
-permissions:
-  contents: write
-  pull-requests: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   terraform-format:
     name: Terraform Format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: latest
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
 
       - name: Format Terraform files
         run: terraform fmt -recursive .
@@ -34,7 +40,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git config --local user.name "github-actions[bot]"
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
 
           if [ -z "${{ github.head_ref }}" ]; then
             echo "::warning::Not on a pull request branch; skipping push"
@@ -58,15 +64,18 @@ jobs:
   terraform-validate:
     name: Terraform Validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: latest
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
 
       - name: Initialize Terraform
         run: |
@@ -81,51 +90,45 @@ jobs:
   documentation:
     name: Documentation Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check for README
+      - name: Check required files
         run: |
-          if [ -f "README.md" ]; then
-            echo "::notice::README.md found"
-          else
-            echo "::error::README.md is missing"
-            exit 1
-          fi
-
-      - name: Check for main.tf
-        run: |
-          if [ -f "main.tf" ]; then
-            echo "::notice::main.tf found"
-          else
-            echo "::error::main.tf is missing"
-            exit 1
-          fi
-
-      - name: Check for variables.tf
-        run: |
-          if [ -f "variables.tf" ]; then
-            echo "::notice::variables.tf found"
-          else
-            echo "::error::variables.tf is missing"
-            exit 1
-          fi
-
-      - name: Check for outputs.tf
-        run: |
+          MISSING=0
+          
+          for file in README.md main.tf variables.tf; do
+            if [ -f "$file" ]; then
+              echo "::notice::$file found"
+            else
+              echo "::error::$file is missing"
+              MISSING=1
+            fi
+          done
+          
           if [ -f "outputs.tf" ]; then
             echo "::notice::outputs.tf found"
           else
             echo "::warning::outputs.tf is missing (recommended)"
           fi
+          
+          if [ $MISSING -eq 1 ]; then
+            exit 1
+          fi
 
   summary:
     name: Test Summary
     needs: [terraform-format, terraform-validate, documentation]
-    runs-on: ubuntu-latest
     if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
     
     steps:
       - name: Check test results

@@ -2,7 +2,7 @@ name: 'Release: Create Semantic Version'
 
 on:
   pull_request:
-    types: [opened, reopened, labeled, unlabeled, synchronize]
+    types: [opened, reopened, synchronize, edited]
     branches:
       - main
   pull_request_target:
@@ -10,30 +10,67 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  validate-release-label:
-    name: Validate Release Label
+  documentation:
+    name: Create Documentation
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
     
     steps:
-      - name: Check for release label
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Configure Git
         run: |
-          LABELS="${{ join(github.event.pull_request.labels.*.name, ' ') }}"
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Render terraform docs and push changes back to PR
+        uses: terraform-docs/gh-actions@main
+        with:
+          working-dir: .
+          output-file: README.md
+          output-method: inject
+          git-push: "true"
+
+  validate-release-title:
+    name: Validate Release Title Format
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Check for release type in PR title
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
           
-          if [[ ! "$LABELS" =~ release:(major|minor|patch) ]]; then
-            echo "::error::PR must have one of these labels: release:major, release:minor, or release:patch"
+          if [[ ! "$TITLE" =~ ^\[(MAJOR|MINOR|PATCH)\] ]]; then
+            echo "::error::PR title must start with [MAJOR], [MINOR], or [PATCH]"
+            echo "Example: [MAJOR] - Breaking API changes"
             exit 1
           fi
-          echo "::notice::Valid release label found"
+          echo "::notice::Valid release title format found"
+
 
   release:
     name: Create Release
+    needs: validate-release-title
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.new-version.outputs.new-version }}
       skipped: ${{ steps.new-version.outputs.skip }}
@@ -48,18 +85,19 @@ jobs:
       - name: Determine release type
         id: release-type
         run: |
-          LABELS="${{ join(github.event.pull_request.labels.*.name, ' ') }}"
+          TITLE="${{ github.event.pull_request.title }}"
           RELEASE_TYPE=""
           
-          if [[ "$LABELS" =~ release:major ]]; then
+          if [[ "$TITLE" =~ \[MAJOR\] ]]; then
             RELEASE_TYPE="major"
-          elif [[ "$LABELS" =~ release:minor ]]; then
+          elif [[ "$TITLE" =~ \[MINOR\] ]]; then
             RELEASE_TYPE="minor"
-          elif [[ "$LABELS" =~ release:patch ]]; then
+          elif [[ "$TITLE" =~ \[PATCH\] ]]; then
             RELEASE_TYPE="patch"
           fi
           
           echo "release-type=$RELEASE_TYPE" >> "$GITHUB_OUTPUT"
+          echo "::notice::Detected release type from title: $RELEASE_TYPE"
 
       - name: Get current version
         id: current-version
@@ -75,7 +113,7 @@ jobs:
           RELEASE_TYPE="${{ steps.release-type.outputs.release-type }}"
           
           if [ -z "$RELEASE_TYPE" ]; then
-            echo "::warning::No release label found. Skipping release creation."
+            echo "::warning::No release type found in PR title. Skipping release creation."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -96,8 +134,8 @@ jobs:
       - name: Configure Git
         if: steps.new-version.outputs.skip != 'true'
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Create and push git tag
         if: steps.new-version.outputs.skip != 'true'
