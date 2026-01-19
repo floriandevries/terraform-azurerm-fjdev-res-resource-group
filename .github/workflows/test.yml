@@ -35,6 +35,8 @@ jobs:
 
       - name: Format Terraform files
         run: terraform fmt -recursive .
+
+      - name: Commit formatted files
         if: github.event_name == 'pull_request'
         run: |
           git config --local user.name "github-actions[bot]"
